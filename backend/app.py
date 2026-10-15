@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./orbe.db")
@@ -339,6 +339,14 @@ def listed(db, model, u, limit, offset):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": app.version}
+
+@app.get("/api/ready")
+def readiness(db: Session = Depends(session)):
+    try:
+        db.execute(select(1))
+    except SQLAlchemyError as exc:
+        raise HTTPException(503, "Banco de dados indisponível") from exc
+    return {"status": "ready"}
 
 @app.post("/api/auth/login")
 def login(body: Login, db: Session = Depends(session)):

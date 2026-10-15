@@ -33,6 +33,7 @@ def auth(client, codigo="municipio-teste", email="gestor@teste.gov.br", senha="s
 
 def test_health_and_auth(client):
     assert client.get("/api/health").status_code == 200
+    assert client.get("/api/ready").json()["status"] == "ready"
     assert client.get("/api/protocolos").status_code == 401
     assert client.post("/api/auth/login",json={"entidade":"municipio-teste","email":"gestor@teste.gov.br","senha":"errada"}).status_code == 401
     assert client.get("/api/auth/me",headers=auth(client)).status_code == 200
