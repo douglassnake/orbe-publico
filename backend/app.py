@@ -185,8 +185,8 @@ class NovoMovimento(Input):
 
 def secret():
     value = os.getenv("SECRET_KEY", "")
-    if len(value) < 32:
-        raise RuntimeError("SECRET_KEY precisa ter pelo menos 32 caracteres")
+    if len(value) < 32 or value.startswith("SUBSTITUA"):
+        raise RuntimeError("SECRET_KEY precisa ser aleatória e ter pelo menos 32 caracteres")
     return value
 
 def password_hash(password):
@@ -206,6 +206,13 @@ def password_matches(password, stored):
     except (ValueError, TypeError):
         return False
 
+def safe_flush(db):
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Identificador duplicado nesta entidade") from exc
+
 def initialize():
     secret()
     Base.metadata.create_all(engine)  # MVP somente; substituir por migrações Alembic
@@ -213,11 +220,11 @@ def initialize():
         if db.scalar(select(func.count()).select_from(Entidade)):
             return
         required = ["BOOTSTRAP_ENTIDADE_CODIGO", "BOOTSTRAP_ENTIDADE_NOME", "BOOTSTRAP_ADMIN_EMAIL", "BOOTSTRAP_ADMIN_PASSWORD"]
-        if any(not os.getenv(k) for k in required):
+        if any(not os.getenv(k) or os.getenv(k, "").startswith("SUBSTITUA") for k in required):
             raise RuntimeError("Defina as variáveis de bootstrap no arquivo .env")
         e = Entidade(codigo=os.environ[required[0]], nome=os.environ[required[1]])
         db.add(e)
-        db.flush()
+        safe_flush(db)
         db.add(Usuario(entidade_id=e.id, email=os.environ[required[2]].lower(), nome="Administrador", perfil="admin", senha_hash=password_hash(os.environ[required[3]])))
         db.commit()
 
@@ -299,7 +306,7 @@ def me(u: Usuario = Depends(current)):
 def create_user(body: NovoUsuario, u: Usuario = Depends(admin), db: Session = Depends(session)):
     item = Usuario(entidade_id=u.entidade_id, email=body.email.lower(), nome=body.nome, senha_hash=password_hash(body.senha), perfil=body.perfil)
     db.add(item)
-    db.flush()
+    safe_flush(db)
     audit(db, u, "usuarios", item.id, "criar", item.email)
     save(db, item)
     return {"id": item.id, "nome": item.nome, "email": item.email, "perfil": item.perfil}
@@ -316,7 +323,7 @@ def protocolos(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0
 def novo_protocolo(body: NovoProtocolo, u: Usuario = Depends(writer), db: Session = Depends(session)):
     item = Protocolo(entidade_id=u.entidade_id, numero="tmp-" + os.urandom(12).hex(), criado_por=u.id, **body.model_dump())
     db.add(item)
-    db.flush()
+    safe_flush(db)
     item.numero = f"{utcnow().year}/{item.id:06d}"
     audit(db, u, "protocolos", item.id, "criar", item.assunto)
     return save(db, item)
@@ -335,7 +342,7 @@ def tramitar(pid: int, body: NovoTramite, u: Usuario = Depends(writer), db: Sess
     db.add(mov)
     item.setor_atual = body.destino
     item.status = "em_andamento"
-    db.flush()
+    safe_flush(db)
     audit(db, u, "protocolos", pid, "tramitar", body.destino)
     return save(db, mov)
 
@@ -354,7 +361,7 @@ def leis(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), u: 
 def nova_lei(body: NovaLei, u: Usuario = Depends(writer), db: Session = Depends(session)):
     item = Lei(entidade_id=u.entidade_id, **body.model_dump())
     db.add(item)
-    db.flush()
+    safe_flush(db)
     audit(db, u, "leis", item.id, "criar", item.ementa)
     return save(db, item)
 
@@ -366,7 +373,7 @@ def fornecedores(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge
 def novo_fornecedor(body: NovoFornecedor, u: Usuario = Depends(writer), db: Session = Depends(session)):
     item = Fornecedor(entidade_id=u.entidade_id, **body.model_dump())
     db.add(item)
-    db.flush()
+    safe_flush(db)
     audit(db, u, "fornecedores", item.id, "criar", item.nome)
     return save(db, item)
 
@@ -378,7 +385,7 @@ def bens(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), u: 
 def novo_bem(body: NovoBem, u: Usuario = Depends(writer), db: Session = Depends(session)):
     item = Bem(entidade_id=u.entidade_id, **body.model_dump())
     db.add(item)
-    db.flush()
+    safe_flush(db)
     audit(db, u, "bens", item.id, "criar", item.tombamento)
     return save(db, item)
 
@@ -390,7 +397,7 @@ def estoque(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), 
 def novo_item(body: NovoItem, u: Usuario = Depends(writer), db: Session = Depends(session)):
     item = Item(entidade_id=u.entidade_id, **body.model_dump())
     db.add(item)
-    db.flush()
+    safe_flush(db)
     audit(db, u, "estoque", item.id, "criar", item.codigo)
     return save(db, item)
 
@@ -404,7 +411,7 @@ def movimentar(iid: int, body: NovoMovimento, u: Usuario = Depends(writer), db: 
     item.saldo += body.quantidade
     mov = Movimento(entidade_id=u.entidade_id, item_id=iid, quantidade=body.quantidade, motivo=body.motivo, usuario_id=u.id)
     db.add(mov)
-    db.flush()
+    safe_flush(db)
     audit(db, u, "estoque", iid, "movimentar", body.motivo)
     result = save(db, mov)
     return {"movimento": result, "saldo": str(item.saldo)}
