@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from alembic import command
+from alembic.config import Config
 
 _fd, _name = tempfile.mkstemp(suffix=".db")
 os.close(_fd)
@@ -18,6 +20,8 @@ from app import app, Entidade, Usuario, SessionLocal, password_hash
 
 @pytest.fixture(scope="module")
 def client():
+    cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    command.upgrade(cfg, "head")
     with TestClient(app) as c:
         yield c
     Path(_name).unlink(missing_ok=True)
@@ -71,3 +75,31 @@ def test_duplicate_supplier_and_audit(client):
     records=client.get("/api/auditoria",headers=h)
     assert records.status_code==200
     assert len(records.json())>=3
+
+def test_status_transition_and_revocation(client):
+    h=auth(client)
+    p=client.post("/api/protocolos",headers=h,json={"assunto":"Encerrar protocolo","requerente":"Pessoa","setor_atual":"Setor inicial"})
+    assert p.status_code == 201, p.text
+    pid=p.json()["id"]
+    assert client.patch(f"/api/protocolos/{pid}/status",headers=h,json={"status":"concluido"}).status_code==200
+    assert client.patch(f"/api/protocolos/{pid}/status",headers=h,json={"status":"aberto"}).status_code==409
+    assert client.post(f"/api/protocolos/{pid}/tramitar",headers=h,json={"destino":"Outro setor"}).status_code==409
+    assert client.post("/api/auth/revogar-sessoes",headers=h).status_code==200
+    assert client.get("/api/auth/me",headers=h).status_code==401
+    assert client.get("/api/auth/me",headers=auth(client)).status_code==200
+
+
+def test_login_lockout(client):
+    h=auth(client)
+    response=client.post("/api/admin/usuarios",headers=h,json={
+        "nome":"Conta de bloqueio", "email":"bloqueio@teste.gov.br",
+        "perfil":"leitor", "senha":"senha-bloqueio-forte"
+    })
+    assert response.status_code==201
+    for _ in range(5):
+        response=client.post("/api/auth/login",json={
+            "entidade":"municipio-teste","email":"bloqueio@teste.gov.br","senha":"incorreta"})
+        assert response.status_code==401
+    response=client.post("/api/auth/login",json={
+        "entidade":"municipio-teste","email":"bloqueio@teste.gov.br","senha":"senha-bloqueio-forte"})
+    assert response.status_code==401

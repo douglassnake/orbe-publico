@@ -91,5 +91,9 @@
       login.hidden=true;root.hidden=false;await render('resumo');
     }catch(err){error.textContent=err.message;}
   };
-  document.getElementById('logout').onclick=()=>{token='';profile='';content.replaceChildren();root.hidden=true;login.hidden=false;};
+  document.getElementById('logout').onclick=async()=>{
+    try { if(token) await api('auth/revogar-sessoes','POST'); }
+    catch (err) { console.warn('Falha ao revogar sessão remotamente'); }
+    finally { token=''; profile=''; content.replaceChildren(); root.hidden=true; login.hidden=false; }
+  };
 })();

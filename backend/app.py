@@ -43,6 +43,9 @@ class Usuario(Base):
     senha_hash = Column(String(255), nullable=False)
     perfil = Column(String(20), nullable=False, default="leitor")
     ativo = Column(Integer, nullable=False, default=1)
+    token_versao = Column(Integer, nullable=False, default=0)
+    falhas_login = Column(Integer, nullable=False, default=0)
+    bloqueado_ate = Column(DateTime(timezone=True), nullable=True)
     __table_args__ = (UniqueConstraint("entidade_id", "email"),)
 
 class Protocolo(Base):
@@ -206,6 +209,8 @@ def password_matches(password, stored):
     except (ValueError, TypeError):
         return False
 
+DUMMY_PASSWORD_HASH = password_hash("senha-ficticia-sem-usuario")
+
 def safe_flush(db):
     try:
         db.flush()
@@ -215,7 +220,7 @@ def safe_flush(db):
 
 def initialize():
     secret()
-    Base.metadata.create_all(engine)  # MVP somente; substituir por migrações Alembic
+    # O esquema é provisionado exclusivamente por `alembic upgrade head`.
     with SessionLocal() as db:
         if db.scalar(select(func.count()).select_from(Entidade)):
             return
@@ -245,7 +250,7 @@ def current(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), 
     try:
         data = jwt.decode(credentials.credentials, secret(), algorithms=["HS256"], options={"require": ["sub", "tenant", "exp"]})
         user = db.get(Usuario, int(data["sub"]))
-        if user is None or not user.ativo or user.entidade_id != data["tenant"]:
+        if user is None or not user.ativo or user.entidade_id != data["tenant"] or data.get("tv") != user.token_versao:
             raise ValueError("Principal inválido")
     except (jwt.PyJWTError, ValueError, KeyError, TypeError):
         raise HTTPException(401, "Token inválido ou expirado")
@@ -293,14 +298,38 @@ def health():
 def login(body: Login, db: Session = Depends(session)):
     tenant = db.scalar(select(Entidade).where(Entidade.codigo == body.entidade))
     user = db.scalar(select(Usuario).where(Usuario.entidade_id == tenant.id, Usuario.email == body.email.lower())) if tenant else None
-    if not user or not user.ativo or not password_matches(body.senha, user.senha_hash):
+    if user is None:
+        password_matches(body.senha, DUMMY_PASSWORD_HASH)  # Uniformiza o trabalho criptográfico.
         raise HTTPException(401, "Credenciais inválidas")
-    token = jwt.encode({"sub": str(user.id), "tenant": tenant.id, "exp": utcnow() + timedelta(hours=8)}, secret(), algorithm="HS256")
+    until = user.bloqueado_ate
+    if until is not None:
+        until = until.replace(tzinfo=timezone.utc) if until.tzinfo is None else until
+    if until is not None and until > utcnow():
+        raise HTTPException(401, "Credenciais inválidas")
+    if not user.ativo or not password_matches(body.senha, user.senha_hash):
+        if user.ativo:
+            user.falhas_login += 1
+            if user.falhas_login >= 5:
+                user.bloqueado_ate = utcnow() + timedelta(minutes=15)
+            db.commit()
+        raise HTTPException(401, "Credenciais inválidas")
+    if user.falhas_login or user.bloqueado_ate is not None:
+        user.falhas_login, user.bloqueado_ate = 0, None
+        db.commit()
+    token = jwt.encode({"sub": str(user.id), "tenant": tenant.id, "tv": user.token_versao, "exp": utcnow() + timedelta(hours=1)}, secret(), algorithm="HS256")
     return {"access_token": token, "token_type": "bearer", "nome": user.nome, "perfil": user.perfil, "entidade": tenant.nome}
 
 @app.get("/api/auth/me")
 def me(u: Usuario = Depends(current)):
     return {"id": u.id, "nome": u.nome, "email": u.email, "perfil": u.perfil, "entidade_id": u.entidade_id}
+
+@app.post("/api/auth/revogar-sessoes")
+def revogar_sessoes(u: Usuario = Depends(current), db: Session = Depends(session)):
+    registro = owned(db, Usuario, u, u.id, lock=True)
+    registro.token_versao += 1
+    audit(db, u, "usuarios", u.id, "revogar_sessoes", "Revogação global pelo usuário")
+    save(db, registro)
+    return {"revogado": True}
 
 @app.post("/api/admin/usuarios", status_code=201)
 def create_user(body: NovoUsuario, u: Usuario = Depends(admin), db: Session = Depends(session)):
@@ -349,6 +378,9 @@ def tramitar(pid: int, body: NovoTramite, u: Usuario = Depends(writer), db: Sess
 @app.patch("/api/protocolos/{pid}/status")
 def status_protocolo(pid: int, body: NovoStatus, u: Usuario = Depends(writer), db: Session = Depends(session)):
     item = owned(db, Protocolo, u, pid, lock=True)
+    permitted = {"aberto": {"em_andamento", "concluido", "cancelado"}, "em_andamento": {"concluido", "cancelado"}, "concluido": set(), "cancelado": set()}
+    if body.status not in permitted[item.status]:
+        raise HTTPException(409, "Transição de status não permitida")
     item.status = body.status
     audit(db, u, "protocolos", pid, "status", body.status)
     return save(db, item)

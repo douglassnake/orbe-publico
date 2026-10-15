@@ -46,4 +46,18 @@ Ver docs/rea-investigacao.md.
 
 ## Aviso
 
-O MVP não está homologado para uso governamental operacional. Base.metadata.create_all() é uma simplificação provisória; antes de produção será obrigatória a adoção de Alembic, hardening de autenticação/sessão, logs adequados, privacidade, backup e validação fiscal/jurídica.
+O MVP não está homologado para uso governamental operacional. O banco usa Alembic (revisão inicial 20261015_0001). O startup Docker roda `alembic upgrade head` antes da API. Credenciais ficam no `.env` não versionado. Implantação em base anteriormente criada por `create_all` requer análise do esquema e backup antes de qualquer migração. Ainda faltam MFA, rate limiting perimetral, backup/restore ensaiados, privacidade e validação fiscal/jurídica.
+
+
+## Migrações e sessões
+
+No ambiente de desenvolvimento:
+
+```bash
+cd backend
+export DATABASE_URL='sqlite:///./orbe-dev.db'
+alembic upgrade head
+alembic current
+```
+
+Para instalações Docker novas, a API aplica a migração antes de iniciar. **Não rode downgrade em banco contendo dados reais**. Senhas incorretas repetidas causam bloqueio da conta após cinco tentativas por 15 minutos; a revogação de sessões invalida todos os tokens daquele usuário, inclusive em outros dispositivos. Permanecem pendentes MFA, rate limit por IP/edge e hardening de produção.
