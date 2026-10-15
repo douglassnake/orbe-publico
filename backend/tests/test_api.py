@@ -103,3 +103,40 @@ def test_login_lockout(client):
     response=client.post("/api/auth/login",json={
         "entidade":"municipio-teste","email":"bloqueio@teste.gov.br","senha":"senha-bloqueio-forte"})
     assert response.status_code==401
+
+
+def test_compras_contratos_mesma_entidade(client):
+    h=auth(client)
+    fornecedor=client.post("/api/fornecedores",headers=h,json={
+        "nome":"Fornecedor contrato", "documento":"99887766000188"}).json()
+    compra=client.post("/api/compras",headers=h,json={
+        "descricao":"Serviço de manutenção", "justificativa":"Manutenção preventiva do patrimônio",
+        "solicitante":"Administração", "valor_estimado":"2500.00"})
+    assert compra.status_code==201,compra.text
+    cid=compra.json()["id"]
+    assert compra.json()["numero"].startswith("SC-")
+    assert client.patch(f"/api/compras/{cid}/status",headers=h,json={"status":"aprovada"}).status_code==409
+    assert client.patch(f"/api/compras/{cid}/status",headers=h,json={"status":"em_analise"}).status_code==200
+    assert client.patch(f"/api/compras/{cid}/status",headers=h,json={"status":"aprovada"}).status_code==200
+    assert client.patch(f"/api/compras/{cid}/status",headers=h,json={"status":"aberta"}).status_code==409
+    bad=client.post("/api/contratos",headers=h,json={
+        "numero":"001/2026","objeto":"Manutenção de instalações",
+        "fornecedor_id":999999,"valor_global":"1000.00",
+        "vigencia_inicio":"2026-11-01","vigencia_fim":"2026-12-31"})
+    assert bad.status_code==404
+    payload={"numero":"001/2026","objeto":"Manutenção de instalações",
+             "fornecedor_id":fornecedor["id"],"valor_global":"1000.00",
+             "vigencia_inicio":"2026-11-01","vigencia_fim":"2026-12-31"}
+    assert client.post("/api/contratos",headers=h,json={**payload,
+        "vigencia_fim":"2026-10-01"}).status_code==422
+    ok=client.post("/api/contratos",headers=h,json=payload)
+    assert ok.status_code==201,ok.text
+    assert client.post("/api/contratos",headers=h,json=payload).status_code==409
+    assert len(client.get("/api/contratos",headers=h).json())==1
+    assert client.get("/api/resumo",headers=h).json()["compras"]>=1
+    reader=auth(client,"municipio-teste","leitor@teste.gov.br","senha-leitor-forte")
+    assert client.post("/api/contratos",headers=reader,json=payload).status_code==403
+    assert client.patch(f"/api/compras/{cid}/status",headers=reader,json={"status":"rejeitada"}).status_code==403
+    other=auth(client,"outra-entidade","admin@outra.gov.br","senha-outra-muito-forte")
+    assert client.get("/api/contratos",headers=other).json()==[]
+    assert client.post("/api/contratos",headers=other,json=payload).status_code==404

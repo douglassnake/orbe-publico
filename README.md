@@ -10,6 +10,8 @@
 - Papéis admin, operador e leitor
 - Protocolo com numeração, status e tramitação
 - Cadastro de legislação, fornecedores e patrimônio
+- Solicitações internas de compras com aprovação controlada por administrador
+- Cadastro administrativo de contratos vinculados aos fornecedores da mesma entidade
 - Almoxarifado com histórico de movimentos e trava para saldo negativo
 - Auditoria de alterações e painel de indicadores
 - Interface responsiva, API OpenAPI/Swagger, PostgreSQL 16, Docker Compose e testes
@@ -61,3 +63,8 @@ alembic current
 ```
 
 Para instalações Docker novas, a API aplica a migração antes de iniciar. **Não rode downgrade em banco contendo dados reais**. Senhas incorretas repetidas causam bloqueio da conta após cinco tentativas por 15 minutos; a revogação de sessões invalida todos os tokens daquele usuário, inclusive em outros dispositivos. Permanecem pendentes MFA, rate limit por IP/edge e hardening de produção.
+
+
+## Compras e contratos (módulo administrativo)
+
+As solicitações de compras são registradas com numeração SC-ANO/ID, descrição, justificativa, setor solicitante e valor estimado. Somente administradores alteram o estado: aberta → em análise → aprovada ou rejeitada. Contratos têm número, objeto, fornecedor da entidade, vigência e valor; nesta fase ficam em **rascunho**. Ainda **não** há condução de procedimento licitatório, publicidade/PNCP, empenho, medição, execução financeira, assinaturas digitais nem ateste de conformidade com a Lei 14.133/2021. Não use para substituir sistemas oficiais.
