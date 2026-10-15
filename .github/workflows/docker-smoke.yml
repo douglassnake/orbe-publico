@@ -1,0 +1,43 @@
+name: Docker Smoke Test
+on:
+  push:
+  pull_request:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-database-password-only
+      SECRET_KEY: ci-local-secret-abcdefghijklmnopqrstuvwxyz-0123456789
+      BOOTSTRAP_ENTIDADE_CODIGO: org-ci
+      BOOTSTRAP_ENTIDADE_NOME: Municipio CI
+      BOOTSTRAP_ADMIN_EMAIL: ci@example.test
+      BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-password-2026
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+      - name: Build and start temporary environment
+        run: docker compose up -d --build --wait
+      - name: Check readiness and authentication
+        run: |
+          curl --fail --silent http://127.0.0.1:8000/api/ready
+          python3 - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+          payload = json.dumps({"entidade":"org-ci","email":"ci@example.test","senha":"ci-bootstrap-password-2026"}).encode()
+          request = Request("http://127.0.0.1:8000/api/auth/login", data=payload, headers={"Content-Type":"application/json"})
+          with urlopen(request, timeout=10) as response:
+              assert json.load(response)["access_token"]
+          print("Health and login checks passed")
+          PY
+      - name: Backup and restore rehearsal
+        run: |
+          export ORBE_BACKUP_DIR=/tmp/orbe-ci-backup
+          bash scripts/backup-db.sh
+          bash scripts/restore-check.sh "$(find "$ORBE_BACKUP_DIR" -maxdepth 1 -name '*.dump' | head -1)"
+      - name: Inspect logs on failure
+        if: failure()
+        run: docker compose logs --tail=80
+      - name: Remove ephemeral containers and volumes
+        if: always()
+        run: docker compose down -v --remove-orphans

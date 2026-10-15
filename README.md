@@ -68,3 +68,7 @@ Para instalações Docker novas, a API aplica a migração antes de iniciar. **N
 ## Compras e contratos (módulo administrativo)
 
 As solicitações de compras são registradas com numeração SC-ANO/ID, descrição, justificativa, setor solicitante e valor estimado. Somente administradores alteram o estado: aberta → em análise → aprovada ou rejeitada. Contratos têm número, objeto, fornecedor da entidade, vigência e valor; nesta fase ficam em **rascunho**. Ainda **não** há condução de procedimento licitatório, publicidade/PNCP, empenho, medição, execução financeira, assinaturas digitais nem ateste de conformidade com a Lei 14.133/2021. Não use para substituir sistemas oficiais.
+
+## Homologação e cópias de segurança
+
+A verificação GitHub Actions executa também um contêiner completo e ensaia backup e restauração em banco temporário. O procedimento recomendado para um ZimaOS isolado está em [docs/implantacao-zimaos.md](docs/implantacao-zimaos.md). O serviço disponibiliza `GET /api/ready` para confirmar que a API acessa o banco. Nenhum deploy externo é efetuado automaticamente.
