@@ -61,3 +61,13 @@ def test_roles_and_inventory(client):
     assert client.post(f"/api/estoque/{iid}/movimentos",headers=h,json={"quantidade":"10","motivo":"Compra"}).status_code==201
     assert client.post(f"/api/estoque/{iid}/movimentos",headers=h,json={"quantidade":"-11","motivo":"Saída"}).status_code==409
     assert client.post(f"/api/estoque/{iid}/movimentos",headers=h,json={"quantidade":"-4","motivo":"Consumo"}).json()["saldo"]=="6.000"
+
+
+def test_duplicate_supplier_and_audit(client):
+    h=auth(client)
+    payload={"nome":"Fornecedor Exemplo","documento":"12345678900","email":"contato@exemplo.com"}
+    assert client.post("/api/fornecedores",headers=h,json=payload).status_code==201
+    assert client.post("/api/fornecedores",headers=h,json=payload).status_code==409
+    records=client.get("/api/auditoria",headers=h)
+    assert records.status_code==200
+    assert len(records.json())>=3
