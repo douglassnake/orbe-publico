@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -13,7 +13,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine, func, select
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -91,6 +91,35 @@ class Fornecedor(Base):
     documento = Column(String(30), nullable=False)
     email = Column(String(255))
     __table_args__ = (UniqueConstraint("entidade_id", "documento"),)
+
+class Compra(Base):
+    __tablename__ = "compras"
+    id = Column(Integer, primary_key=True)
+    entidade_id = Column(Integer, ForeignKey("entidades.id"), nullable=False, index=True)
+    numero = Column(String(60), nullable=False)
+    descricao = Column(String(250), nullable=False)
+    justificativa = Column(Text, nullable=False)
+    solicitante = Column(String(150), nullable=False)
+    valor_estimado = Column(Numeric(15, 2), nullable=False)
+    status = Column(String(30), nullable=False, default="aberta")
+    criado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("entidade_id", "numero"),)
+
+class Contrato(Base):
+    __tablename__ = "contratos"
+    id = Column(Integer, primary_key=True)
+    entidade_id = Column(Integer, ForeignKey("entidades.id"), nullable=False, index=True)
+    numero = Column(String(60), nullable=False)
+    objeto = Column(Text, nullable=False)
+    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=False)
+    valor_global = Column(Numeric(15, 2), nullable=False)
+    vigencia_inicio = Column(Date(), nullable=False)
+    vigencia_fim = Column(Date(), nullable=False)
+    situacao = Column(String(30), nullable=False, default="rascunho")
+    registrado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("entidade_id", "numero"),)
 
 class Bem(Base):
     __tablename__ = "bens"
@@ -170,6 +199,23 @@ class NovoFornecedor(Input):
     nome: str = Field(min_length=2)
     documento: str = Field(min_length=5)
     email: str | None = None
+
+class NovaCompra(Input):
+    descricao: str = Field(min_length=3, max_length=250)
+    justificativa: str = Field(min_length=5, max_length=5000)
+    solicitante: str = Field(min_length=2, max_length=150)
+    valor_estimado: Decimal = Field(ge=0, max_digits=15, decimal_places=2)
+
+class StatusCompra(Input):
+    status: Literal["aberta", "em_analise", "aprovada", "rejeitada"]
+
+class NovoContrato(Input):
+    numero: str = Field(min_length=1, max_length=60)
+    objeto: str = Field(min_length=5, max_length=5000)
+    fornecedor_id: int = Field(gt=0)
+    valor_global: Decimal = Field(ge=0, max_digits=15, decimal_places=2)
+    vigencia_inicio: date
+    vigencia_fim: date
 
 class NovoBem(Input):
     tombamento: str = Field(min_length=1)
@@ -342,7 +388,7 @@ def create_user(body: NovoUsuario, u: Usuario = Depends(admin), db: Session = De
 
 @app.get("/api/resumo")
 def resumo(u: Usuario = Depends(current), db: Session = Depends(session)):
-    return {key: db.scalar(select(func.count()).select_from(model).where(model.entidade_id == u.entidade_id)) for key, model in [("protocolos", Protocolo), ("leis", Lei), ("fornecedores", Fornecedor), ("bens", Bem), ("estoque", Item)]}
+    return {key: db.scalar(select(func.count()).select_from(model).where(model.entidade_id == u.entidade_id)) for key, model in [("protocolos", Protocolo), ("leis", Lei), ("fornecedores", Fornecedor), ("compras", Compra), ("contratos", Contrato), ("bens", Bem), ("estoque", Item)]}
 
 @app.get("/api/protocolos")
 def protocolos(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), u: Usuario = Depends(current), db: Session = Depends(session)):
@@ -407,6 +453,50 @@ def novo_fornecedor(body: NovoFornecedor, u: Usuario = Depends(writer), db: Sess
     db.add(item)
     safe_flush(db)
     audit(db, u, "fornecedores", item.id, "criar", item.nome)
+    return save(db, item)
+
+@app.get("/api/compras")
+def compras(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+           u: Usuario = Depends(current), db: Session = Depends(session)):
+    return listed(db, Compra, u, limit, offset)
+
+@app.post("/api/compras", status_code=201)
+def nova_compra(body: NovaCompra, u: Usuario = Depends(writer), db: Session = Depends(session)):
+    item = Compra(entidade_id=u.entidade_id, numero="tmp-" + os.urandom(12).hex(),
+                  criado_por=u.id, **body.model_dump())
+    db.add(item)
+    safe_flush(db)
+    item.numero = f"SC-{utcnow().year}/{item.id:06d}"
+    audit(db, u, "compras", item.id, "criar", item.descricao)
+    return save(db, item)
+
+@app.patch("/api/compras/{cid}/status")
+def alterar_status_compra(cid: int, body: StatusCompra, u: Usuario = Depends(admin),
+                          db: Session = Depends(session)):
+    item = owned(db, Compra, u, cid, lock=True)
+    transicoes = {"aberta": {"em_analise", "rejeitada"}, "em_analise": {"aprovada", "rejeitada"},
+                 "aprovada": set(), "rejeitada": set()}
+    if body.status not in transicoes[item.status]:
+        raise HTTPException(409, "Transição de compra não permitida")
+    item.status = body.status
+    audit(db, u, "compras", cid, "status", body.status)
+    return save(db, item)
+
+@app.get("/api/contratos")
+def contratos(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+              u: Usuario = Depends(current), db: Session = Depends(session)):
+    return listed(db, Contrato, u, limit, offset)
+
+@app.post("/api/contratos", status_code=201)
+def novo_contrato(body: NovoContrato, u: Usuario = Depends(writer), db: Session = Depends(session)):
+    # Fornecedor precisa pertencer à mesma entidade do usuário autenticado.
+    owned(db, Fornecedor, u, body.fornecedor_id)
+    if body.vigencia_fim < body.vigencia_inicio:
+        raise HTTPException(422, "Fim de vigência anterior ao início")
+    item = Contrato(entidade_id=u.entidade_id, registrado_por=u.id, **body.model_dump())
+    db.add(item)
+    safe_flush(db)
+    audit(db, u, "contratos", item.id, "criar", item.numero)
     return save(db, item)
 
 @app.get("/api/bens")

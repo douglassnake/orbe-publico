@@ -2,11 +2,13 @@
   const login = document.getElementById('login'), root = document.getElementById('root');
   const content = document.getElementById('content'), nav = document.getElementById('nav');
   const heading = document.getElementById('pageheading');
-  const names = {resumo:'Visão geral',protocolos:'Protocolos',leis:'Legislação',fornecedores:'Fornecedores',bens:'Patrimônio',estoque:'Almoxarifado',auditoria:'Auditoria'};
+  const names = {resumo:'Visão geral',protocolos:'Protocolos',leis:'Legislação',fornecedores:'Fornecedores',compras:'Compras',contratos:'Contratos',bens:'Patrimônio',estoque:'Almoxarifado',auditoria:'Auditoria'};
   const forms = {
     protocolos:[['assunto','Assunto'],['requerente','Requerente'],['setor_atual','Setor inicial'],['descricao','Descrição','textarea']],
     leis:[['tipo','Tipo'],['numero','Número'],['ano','Ano','number'],['ementa','Ementa','textarea']],
     fornecedores:[['nome','Nome / Razão social'],['documento','CPF / CNPJ'],['email','E-mail','email']],
+    compras:[['descricao','Descrição'],['solicitante','Setor solicitante'],['valor_estimado','Valor estimado','number'],['justificativa','Justificativa','textarea']],
+    contratos:[['numero','Número do contrato'],['objeto','Objeto','textarea'],['fornecedor_id','ID do fornecedor','number'],['valor_global','Valor global','number'],['vigencia_inicio','Início da vigência','date'],['vigencia_fim','Fim da vigência','date']],
     bens:[['tombamento','Tombo'],['descricao','Descrição'],['localizacao','Localização'],['valor_aquisicao','Valor de aquisição','number']],
     estoque:[['codigo','Código'],['descricao','Descrição'],['unidade','Unidade']]
   };
@@ -47,7 +49,7 @@
       const field=el('label','',label);
       let input = document.createElement(type==='textarea'?'textarea':'input');
       if(type!=='textarea')input.type=type||'text';
-      if(type==='number')input.step=(key==='valor_aquisicao'?'.01':'1');
+      if(type==='number')input.step=(['valor_aquisicao','valor_estimado','valor_global'].includes(key)?'.01':'1');
       input.name=key; input.required=!['descricao','email'].includes(key);
       if(key==='unidade')input.value='un';
       field.append(input);grid.append(field);
