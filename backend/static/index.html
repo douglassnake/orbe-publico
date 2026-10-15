@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbe Público — Gestão Municipal</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#18233a;background:#f4f6fa}
+*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer}
+#root{display:flex;min-height:100vh}aside{width:245px;background:#111d35;color:#dce7fb;padding:25px 17px;flex-shrink:0}
+.brand{font-size:23px;font-weight:750;letter-spacing:-.6px;margin:0 0 8px}.tagline{font-size:11px;letter-spacing:2px;color:#8aadd5;text-transform:uppercase;margin-bottom:38px}
+aside button{display:block;width:100%;text-align:left;background:transparent;border:0;color:#b9c8dd;border-radius:9px;padding:13px 14px;margin:2px 0}
+aside button.active,aside button:hover{background:#243b5f;color:white}main{flex:1;min-width:0;padding:28px 36px}
+header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e5eaf2;padding-bottom:20px;margin-bottom:25px;gap:15px}
+.small{font-size:13px;color:#6d788c}h1{font-size:25px;margin:8px 0;font-weight:750}h2{font-size:17px}
+.panel{border:1px solid #e4eaf2;background:white;border-radius:16px;padding:22px;box-shadow:0 4px 20px #0c224010}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;margin:20px 0}
+.metric{font-size:30px;font-weight:760;margin:12px 0 0}.statlabel{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#64748b}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:13px 11px;border-bottom:1px solid #edf0f4;text-align:left}th{font-size:12px;color:#697a91;font-weight:700}
+.primary{background:#2163ca;border:0;color:white;padding:11px 17px;border-radius:10px;font-weight:650}
+.ghost{border:1px solid #d7e0ed;background:white;padding:10px 13px;border-radius:10px}
+#login{max-width:460px;margin:9vh auto;padding:35px}label{display:block;font-size:13px;color:#526179;margin-bottom:8px;margin-top:14px}
+input,select,textarea{width:100%;border:1px solid #d8e0ec;border-radius:9px;padding:11px 12px;background:white;color:#17233d}
+textarea{min-height:100px}form .primary{margin-top:22px}.headrow{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 18px}
+.error{color:#bd3131;margin-top:15px;white-space:pre-wrap}.empty{padding:40px;color:#7a889b;text-align:center}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}.actions{display:flex;gap:12px;align-items:center}
+@media(max-width:760px){#root{display:block}aside{width:100%;padding:15px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}.brand{font-size:20px;margin-right:10px}.tagline{display:none}aside button{width:auto;font-size:12px;padding:10px}main{padding:17px}header{align-items:start;flex-wrap:wrap}.panel{overflow-x:auto}}
+</style>
+</head>
+<body>
+<div id="login" class="panel">
+<div class="brand">◈ Orbe Público</div><p class="small">Ambiente demonstrativo de gestão municipal</p>
+<form id="loginform"><label>Código da entidade<input name="entidade" required placeholder="municipio-exemplo"></label>
+<label>E-mail<input name="email" type="email" required autocomplete="username"></label>
+<label>Senha<input name="senha" type="password" required autocomplete="current-password"></label>
+<button class="primary" type="submit">Acessar painel</button></form><p id="loginerror" class="error"></p>
+</div>
+<div id="root" hidden><aside><div class="brand">◈ Orbe Público</div><div class="tagline">Gestão Municipal</div><nav id="nav"></nav></aside>
+<main><header><div><div class="small">Painel de administração</div><h1 id="pageheading">Visão geral</h1></div>
+<div class="actions"><span id="username" class="small"></span><button id="logout" class="ghost">Sair</button></div></header>
+<div id="content"></div></main></div>
+<script src="/static/app.js"></script>
+</body></html>
